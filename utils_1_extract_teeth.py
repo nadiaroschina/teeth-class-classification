@@ -101,7 +101,7 @@ def extract_teeth(input_folder, output_folder, clip_classifier, debug=True, star
                 )
             )
 
-            if len(vertical) != 4 or len(horizontal) != 4:
+            if len(vertical) not in (2, 3, 4) or len(horizontal) not in (2, 3, 4):
                 logger.warning(
                     f"{file}: incorrect line count "
                     f"H={len(horizontal)} V={len(vertical)}"

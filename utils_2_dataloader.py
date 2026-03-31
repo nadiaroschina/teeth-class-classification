@@ -210,7 +210,7 @@ def create_dataloaders(batch_size: int = 32, num_workers: int = 4, img_size: int
         batch_size=batch_size, 
         shuffle=True, # Перемешивание важно для обучения
         num_workers=num_workers,
-        pin_memory=True # Ускоряет передачу на GPU
+        pin_memory=(True if torch.cuda.is_available() else False) # Ускоряет передачу на GPU
     )
     
     val_loader = DataLoader(
@@ -218,7 +218,7 @@ def create_dataloaders(batch_size: int = 32, num_workers: int = 4, img_size: int
         batch_size=batch_size, 
         shuffle=False, 
         num_workers=num_workers,
-        pin_memory=True
+        pin_memory=(True if torch.cuda.is_available() else False)
     )
     
     test_loader = DataLoader(
@@ -226,7 +226,7 @@ def create_dataloaders(batch_size: int = 32, num_workers: int = 4, img_size: int
         batch_size=batch_size, 
         shuffle=False, 
         num_workers=num_workers,
-        pin_memory=True
+        pin_memory=(True if torch.cuda.is_available() else False)
     )
     
     return train_loader, val_loader, test_loader
