@@ -6,7 +6,7 @@ import numpy as np
 from tqdm.auto import tqdm
 
 from utils_1_detect_grid_lines import detect_grid_lines
-from utils_1_has_tooth_clip import has_tooth_clip
+from utils_1_has_tooth_clip import has_tooth_clip_batch
 
 def extract_teeth(input_folder, output_folder, clip_classifier, debug=True, start_tooth_id=0):
 
@@ -134,30 +134,33 @@ def extract_teeth(input_folder, output_folder, clip_classifier, debug=True, star
                 os.makedirs(rejected_dir, exist_ok=True)
                 os.makedirs(classification_info_dir, exist_ok=True)
 
-            for i in range(len(horizontal)-1):
-                for j in range(len(vertical)-1):
+            # --- collect all cells from this photo ---
+            cell_coords = [
+                (i, j, horizontal[i], horizontal[i+1], vertical[j], vertical[j+1])
+                for i in range(len(horizontal) - 1)
+                for j in range(len(vertical) - 1)
+            ]
+            cells = [img[y1:y2, x1:x2] for _, _, y1, y2, x1, x2 in cell_coords]
 
-                    y1, y2 = horizontal[i], horizontal[i+1]
-                    x1, x2 = vertical[j], vertical[j+1]
+            # --- single batched CLIP call for all cells of this photo ---
+            batch_results = has_tooth_clip_batch(cells, clip_classifier)
 
-                    tooth = img[y1:y2, x1:x2]
+            for (i, j, y1, y2, x1, x2), tooth, (keep, info) in zip(cell_coords, cells, batch_results):
 
-                    keep, info = has_tooth_clip(tooth, clip_classifier)
-                    
+                if debug:
+                    with open(os.path.join(classification_info_dir, f"{os.path.splitext(file)[0]}_{i}_{j}.json"), "w") as f:
+                        json.dump(info, f)
+
+                dbg_name = f"{os.path.splitext(file)[0]}_{i}_{j}.jpg"
+                if keep:
                     if debug:
-                        with open(os.path.join(classification_info_dir, f"{os.path.splitext(file)[0]}_{i}_{j}.json"), "w") as f:
-                            json.dump(info, f)
-
-                    dbg_name = f"{os.path.splitext(file)[0]}_{i}_{j}.jpg"
-                    if keep:
-                        if debug:
-                            cv2.imwrite(os.path.join(accepted_dir, dbg_name), tooth)
-                        name = f"{tooth_id:05d}.jpg"
-                        cv2.imwrite(os.path.join(output_folder, name), tooth)
-                        tooth_id += 1
-                    else:
-                        if debug:
-                            cv2.imwrite(os.path.join(rejected_dir, dbg_name), tooth)
+                        cv2.imwrite(os.path.join(accepted_dir, dbg_name), tooth)
+                    name = f"{tooth_id:05d}.jpg"
+                    cv2.imwrite(os.path.join(output_folder, name), tooth)
+                    tooth_id += 1
+                else:
+                    if debug:
+                        cv2.imwrite(os.path.join(rejected_dir, dbg_name), tooth)
 
 
         except Exception as e:
