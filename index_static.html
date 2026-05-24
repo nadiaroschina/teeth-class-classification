@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Teeth Classifier — Классификация зубов</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/ort.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #07080d;
+    --surface: #0f1118;
+    --surface2: #161820;
+    --border: rgba(255,255,255,0.07);
+    --border2: rgba(255,255,255,0.14);
+    --teal: #00e5c3;
+    --teal-dim: rgba(0,229,195,0.12);
+    --teal-glow: rgba(0,229,195,0.06);
+    --text: #f0f2f5;
+    --muted: rgba(240,242,245,0.45);
+    --danger: #ff5c5c;
+    --danger-bg: rgba(255,92,92,0.1);
+    --mono: 'IBM Plex Mono', monospace;
+    --head: 'Syne', sans-serif;
+    --body: 'Inter', sans-serif;
+    --radius: 12px;
+    --radius-sm: 8px;
+  }
+
+  html, body {
+    min-height: 100vh;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--body);
+    font-size: 15px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image:
+      linear-gradient(rgba(0,229,195,0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,229,195,0.025) 1px, transparent 1px);
+    background-size: 48px 48px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .wrap {
+    position: relative; z-index: 1;
+    max-width: 680px;
+    margin: 0 auto;
+    padding: 48px 24px 80px;
+  }
+
+  header {
+    margin-bottom: 48px;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  .logo-badge {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    color: var(--teal);
+    background: var(--teal-dim);
+    border: 1px solid rgba(0,229,195,0.25);
+    border-radius: 4px;
+    padding: 3px 10px;
+    margin-bottom: 14px;
+  }
+  h1 {
+    font-family: var(--head);
+    font-size: clamp(26px, 5vw, 38px);
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    line-height: 1.1;
+  }
+  h1 span { color: var(--teal); }
+  .subtitle {
+    margin-top: 10px;
+    font-size: 14px;
+    color: var(--muted);
+    line-height: 1.5;
+  }
+
+  /* ── Help button ── */
+  .help-btn {
+    flex-shrink: 0;
+    margin-top: 4px;
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    border: 1px solid var(--border2);
+    background: var(--surface);
+    color: var(--muted);
+    font-family: var(--head);
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: border-color 0.2s, color 0.2s, background 0.2s;
+  }
+  .help-btn:hover { border-color: var(--teal); color: var(--teal); background: var(--teal-dim); }
+
+  /* ── Model loading status ── */
+  .model-status {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 28px;
+    padding: 12px 16px;
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .status-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--muted);
+    flex-shrink: 0;
+    transition: background 0.3s;
+  }
+  .status-dot.loading { background: #f0b429; animation: pulse 1s ease-in-out infinite; }
+  .status-dot.ready   { background: var(--teal); animation: none; }
+  .status-dot.error   { background: var(--danger); animation: none; }
+
+  /* ── Upload zone ── */
+  .upload-zone {
+    border: 1.5px dashed var(--border2);
+    border-radius: var(--radius);
+    background: var(--surface);
+    padding: 48px 24px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+  .upload-zone::before {
+    content: '';
+    position: absolute; inset: 0;
+    background: var(--teal-glow);
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+  .upload-zone.disabled { pointer-events: none; opacity: 0.45; }
+  .upload-zone:hover:not(.disabled), .upload-zone.drag { border-color: var(--teal); }
+  .upload-zone:hover:not(.disabled)::before, .upload-zone.drag::before { opacity: 1; }
+  .upload-zone input { display: none; }
+
+  .upload-icon {
+    width: 56px; height: 56px;
+    border-radius: 14px;
+    background: var(--teal-dim);
+    border: 1px solid rgba(0,229,195,0.2);
+    display: inline-flex; align-items: center; justify-content: center;
+    margin-bottom: 16px;
+  }
+  .upload-icon svg { width: 26px; height: 26px; stroke: var(--teal); }
+  .upload-title { font-family: var(--head); font-size: 17px; font-weight: 700; margin-bottom: 6px; }
+  .upload-hint { font-size: 13px; color: var(--muted); }
+  .upload-hint em { font-style: normal; font-family: var(--mono); color: rgba(0,229,195,0.6); }
+
+  /* ── Preview ── */
+  .preview-wrap {
+    display: none;
+    margin-top: 20px;
+    border-radius: var(--radius);
+    overflow: hidden;
+    border: 1px solid var(--border);
+    position: relative;
+  }
+  .preview-wrap img {
+    width: 100%; max-height: 320px;
+    object-fit: contain;
+    background: var(--surface2);
+    display: block;
+  }
+  .preview-change {
+    position: absolute; top: 10px; right: 10px;
+    font-family: var(--mono); font-size: 11px;
+    padding: 5px 12px;
+    border-radius: 6px;
+    background: rgba(7,8,13,0.75);
+    border: 1px solid var(--border2);
+    color: var(--muted);
+    cursor: pointer;
+    transition: color 0.2s;
+  }
+  .preview-change:hover { color: var(--text); }
+
+  /* ── Submit ── */
+  .btn-wrap { margin-top: 20px; }
+  .btn-analyse {
+    width: 100%;
+    padding: 15px;
+    border-radius: var(--radius-sm);
+    background: var(--teal);
+    color: #07080d;
+    font-family: var(--head);
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    border: none;
+    cursor: pointer;
+    transition: opacity 0.2s, transform 0.15s;
+    display: none;
+  }
+  .btn-analyse:hover:not(:disabled) { opacity: 0.88; }
+  .btn-analyse:active:not(:disabled) { transform: scale(0.99); }
+  .btn-analyse:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* ── Loading ── */
+  .loading {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    margin-top: 32px;
+    padding: 32px;
+    border-radius: var(--radius);
+    background: var(--surface);
+    border: 1px solid var(--border);
+  }
+  .loader-ring {
+    width: 44px; height: 44px;
+    border: 2.5px solid rgba(0,229,195,0.15);
+    border-top-color: var(--teal);
+    border-radius: 50%;
+    animation: spin 0.75s linear infinite;
+  }
+  .loading p { font-family: var(--mono); font-size: 13px; color: var(--muted); }
+
+  /* ── Error ── */
+  .error-box {
+    margin-top: 20px;
+    padding: 16px 18px;
+    border-radius: var(--radius-sm);
+    background: var(--danger-bg);
+    border: 1px solid rgba(255,92,92,0.25);
+    color: var(--danger);
+    font-size: 14px;
+    line-height: 1.5;
+    display: none;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .error-box svg { flex-shrink: 0; margin-top: 1px; }
+
+  /* ── Result ── */
+  .result-card {
+    display: none;
+    margin-top: 28px;
+    border-radius: var(--radius);
+    border: 1px solid var(--border2);
+    overflow: hidden;
+    background: var(--surface);
+    animation: slideUp 0.3s ease;
+  }
+  .result-top {
+    padding: 24px 24px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  .result-label { font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; color: var(--muted); text-transform: uppercase; margin-bottom: 6px; }
+  .result-class-name { font-family: var(--head); font-size: 32px; font-weight: 800; letter-spacing: -0.02em; color: var(--teal); }
+  .result-class-ru { font-family: var(--head); font-size: 14px; font-weight: 600; color: var(--muted); margin-top: 2px; }
+  .confidence-block { text-align: right; }
+  .conf-label { font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; color: var(--muted); text-transform: uppercase; margin-bottom: 4px; }
+  .conf-value { font-family: var(--mono); font-size: 30px; font-weight: 500; color: var(--text); }
+  .conf-value span { font-size: 18px; color: var(--muted); }
+
+  .bars-section { padding: 20px 24px 24px; }
+  .bars-title { font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; color: var(--muted); text-transform: uppercase; margin-bottom: 16px; }
+  .bar-row { display: grid; grid-template-columns: 90px 1fr 56px; align-items: center; gap: 12px; margin-bottom: 12px; }
+  .bar-label { font-size: 13px; color: var(--muted); font-family: var(--mono); }
+  .bar-track { height: 6px; background: rgba(255,255,255,0.05); border-radius: 99px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 99px; background: rgba(0,229,195,0.3); transition: width 0.6s cubic-bezier(.22,.68,0,1.3); }
+  .bar-fill.top { background: var(--teal); }
+  .bar-pct { font-family: var(--mono); font-size: 12px; color: var(--muted); text-align: right; }
+  .bar-pct.top { color: var(--teal); }
+
+  .btn-reset {
+    margin-top: 28px;
+    width: 100%;
+    padding: 12px;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--muted);
+    font-family: var(--body);
+    font-size: 14px;
+    border: 1px solid var(--border2);
+    cursor: pointer;
+    transition: color 0.2s, border-color 0.2s;
+    display: none;
+  }
+  .btn-reset:hover { color: var(--text); border-color: rgba(255,255,255,0.2); }
+
+  footer {
+    margin-top: 64px;
+    border-top: 1px solid var(--border);
+    padding-top: 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .foot-model { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  .foot-acc { font-family: var(--mono); font-size: 12px; color: var(--teal); background: var(--teal-dim); border-radius: 4px; padding: 3px 10px; }
+
+  /* ── Help modal ── */
+  .modal-backdrop {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(7,8,13,0.82);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  .modal-backdrop.open { display: flex; animation: fadeIn 0.15s ease; }
+  .modal {
+    background: var(--surface2);
+    border: 1px solid var(--border2);
+    border-radius: var(--radius);
+    padding: 32px;
+    max-width: 460px;
+    width: 100%;
+    position: relative;
+    animation: slideUp 0.2s ease;
+  }
+  .modal h2 { font-family: var(--head); font-size: 20px; font-weight: 700; margin-bottom: 20px; }
+  .modal-close {
+    position: absolute; top: 16px; right: 16px;
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    border: 1px solid var(--border2);
+    background: transparent;
+    color: var(--muted);
+    font-size: 16px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: color 0.2s;
+  }
+  .modal-close:hover { color: var(--text); }
+  .modal ol { padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 12px; }
+  .modal ol li { display: flex; gap: 12px; align-items: flex-start; font-size: 14px; color: rgba(240,242,245,0.75); line-height: 1.5; }
+  .step-num {
+    flex-shrink: 0;
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    background: var(--teal-dim);
+    border: 1px solid rgba(0,229,195,0.3);
+    color: var(--teal);
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 500;
+    display: flex; align-items: center; justify-content: center;
+    margin-top: 1px;
+  }
+  .modal .note {
+    margin-top: 18px;
+    padding: 12px 14px;
+    background: var(--teal-glow);
+    border-left: 2px solid var(--teal);
+    border-radius: 0 6px 6px 0;
+    font-size: 13px;
+    color: var(--muted);
+  }
+
+  /* ── Canvas (hidden, used for preprocessing) ── */
+  #offscreen { display: none; }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes slideUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+</style>
+</head>
+<body>
+
+<canvas id="offscreen" width="224" height="224"></canvas>
+
+<div class="wrap">
+
+  <header>
+    <div>
+      <div class="logo-badge">Dental AI · EfficientNet-B0 · ONNX</div>
+      <h1>Teeth<br><span>Classifier</span></h1>
+      <p class="subtitle">Загрузите фотографию зуба — модель работает<br>прямо в браузере, без сервера.</p>
+    </div>
+    <button class="help-btn" id="helpBtn" aria-label="Инструкция">?</button>
+  </header>
+
+  <!-- Model status -->
+  <div class="model-status" id="modelStatus">
+    <div class="status-dot loading" id="statusDot"></div>
+    <span id="statusText">Загрузка модели…</span>
+  </div>
+
+  <!-- Upload zone -->
+  <div class="upload-zone disabled" id="dropZone">
+    <input type="file" id="fileInput" accept="image/jpeg,image/png,image/webp,image/bmp">
+    <div class="upload-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>
+        <polyline points="16 12 12 8 8 12"/>
+        <line x1="12" y1="8" x2="12" y2="20"/>
+      </svg>
+    </div>
+    <div class="upload-title">Перетащите изображение сюда</div>
+    <div class="upload-hint">или нажмите для выбора файла<br><em>JPG / PNG / WebP · до 10 МБ</em></div>
+  </div>
+
+  <div class="preview-wrap" id="previewWrap">
+    <img id="previewImg" src="" alt="Preview">
+    <button class="preview-change" id="changeBtn">Изменить</button>
+  </div>
+
+  <div class="btn-wrap">
+    <button class="btn-analyse" id="analyseBtn">Классифицировать зуб →</button>
+  </div>
+
+  <div class="loading" id="loading">
+    <div class="loader-ring"></div>
+    <p>Анализ изображения…</p>
+  </div>
+
+  <div class="error-box" id="errorBox">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    <span id="errorText"></span>
+  </div>
+
+  <div class="result-card" id="resultCard">
+    <div class="result-top">
+      <div>
+        <div class="result-label">Предсказанный класс</div>
+        <div class="result-class-name" id="resClass">—</div>
+        <div class="result-class-ru" id="resClassRu">—</div>
+      </div>
+      <div class="confidence-block">
+        <div class="conf-label">Уверенность</div>
+        <div class="conf-value" id="resConf">—<span>%</span></div>
+      </div>
+    </div>
+    <div class="bars-section">
+      <div class="bars-title">Вероятности по классам</div>
+      <div id="barsContainer"></div>
+    </div>
+  </div>
+
+  <button class="btn-reset" id="resetBtn">← Загрузить другое изображение</button>
+
+  <footer>
+    <span class="foot-model">EfficientNet-B0 · v1c · ONNX Runtime Web</span>
+    <span class="foot-acc">Test Acc 95.0% · F1 0.949</span>
+  </footer>
+</div>
+
+<!-- Help modal -->
+<div class="modal-backdrop" id="modalBackdrop">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <button class="modal-close" id="modalClose" aria-label="Закрыть">✕</button>
+    <h2 id="modalTitle">Как пользоваться</h2>
+    <ol>
+      <li><span class="step-num">1</span><span>Дождитесь загрузки модели — индикатор вверху станет зелёным.</span></li>
+      <li><span class="step-num">2</span><span>Загрузите фотографию или рентгеновский снимок зуба — перетащите в зону загрузки или нажмите на неё.</span></li>
+      <li><span class="step-num">3</span><span>Нажмите <strong>«Классифицировать зуб»</strong>. Модель работает прямо в браузере — интернет больше не нужен.</span></li>
+      <li><span class="step-num">4</span><span>Вы получите класс зуба (резец, клык, премоляр, моляр) и вероятности по всем классам.</span></li>
+    </ol>
+    <div class="note">
+      Поддерживаемые форматы: JPG, PNG, WebP, BMP. Максимальный размер — 10 МБ. Модель загружается один раз (~20 МБ) и кэшируется браузером.
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Constants ────────────────────────────────────────────────────────────────
+const CLASS_NAMES = ['incisor', 'canine', 'premolar', 'molar'];
+const CLASS_LABELS = { incisor: 'Резец', canine: 'Клык', premolar: 'Премоляр', molar: 'Моляр' };
+const IMG_SIZE = 224;
+const MEAN = [0.485, 0.456, 0.406];
+const STD  = [0.229, 0.224, 0.225];
+const MODEL_URL = 'model.onnx';   // relative path — лежит рядом с index.html
+
+// ── DOM refs ─────────────────────────────────────────────────────────────────
+const dropZone     = document.getElementById('dropZone');
+const fileInput    = document.getElementById('fileInput');
+const previewWrap  = document.getElementById('previewWrap');
+const previewImg   = document.getElementById('previewImg');
+const changeBtn    = document.getElementById('changeBtn');
+const analyseBtn   = document.getElementById('analyseBtn');
+const loading      = document.getElementById('loading');
+const errorBox     = document.getElementById('errorBox');
+const errorText    = document.getElementById('errorText');
+const resultCard   = document.getElementById('resultCard');
+const resetBtn     = document.getElementById('resetBtn');
+const helpBtn      = document.getElementById('helpBtn');
+const modalBackdrop= document.getElementById('modalBackdrop');
+const modalClose   = document.getElementById('modalClose');
+const statusDot    = document.getElementById('statusDot');
+const statusText   = document.getElementById('statusText');
+const offscreen    = document.getElementById('offscreen');
+
+let session = null;
+let currentFile = null;
+
+// ── Model loading ─────────────────────────────────────────────────────────────
+async function loadModel() {
+  try {
+    ort.env.wasm.numThreads = 1;
+    session = await ort.InferenceSession.create(MODEL_URL, {
+      executionProviders: ['wasm'],
+    });
+    statusDot.className = 'status-dot ready';
+    statusText.textContent = 'Модель загружена — готово к работе';
+    dropZone.classList.remove('disabled');
+  } catch (err) {
+    statusDot.className = 'status-dot error';
+    statusText.textContent = 'Ошибка загрузки модели: ' + err.message;
+  }
+}
+
+// ── Preprocessing ─────────────────────────────────────────────────────────────
+function imageToTensor(imgElement) {
+  const ctx = offscreen.getContext('2d');
+  ctx.drawImage(imgElement, 0, 0, IMG_SIZE, IMG_SIZE);
+  const { data } = ctx.getImageData(0, 0, IMG_SIZE, IMG_SIZE); // RGBA uint8
+
+  const floatData = new Float32Array(3 * IMG_SIZE * IMG_SIZE);
+  for (let i = 0; i < IMG_SIZE * IMG_SIZE; i++) {
+    const r = data[i * 4]     / 255;
+    const g = data[i * 4 + 1] / 255;
+    const b = data[i * 4 + 2] / 255;
+    // CHW layout, normalize ImageNet
+    floatData[0 * IMG_SIZE * IMG_SIZE + i] = (r - MEAN[0]) / STD[0];
+    floatData[1 * IMG_SIZE * IMG_SIZE + i] = (g - MEAN[1]) / STD[1];
+    floatData[2 * IMG_SIZE * IMG_SIZE + i] = (b - MEAN[2]) / STD[2];
+  }
+  return new ort.Tensor('float32', floatData, [1, 3, IMG_SIZE, IMG_SIZE]);
+}
+
+function softmax(arr) {
+  const max = Math.max(...arr);
+  const exps = arr.map(x => Math.exp(x - max));
+  const sum = exps.reduce((a, b) => a + b, 0);
+  return exps.map(x => x / sum);
+}
+
+// ── Inference ────────────────────────────────────────────────────────────────
+async function runInference() {
+  if (!session || !currentFile) return;
+
+  hideResult(); hideError();
+  loading.style.display = 'flex';
+  analyseBtn.disabled = true;
+
+  try {
+    const tensor = imageToTensor(previewImg);
+    const feeds = { input: tensor };
+    const results = await session.run(feeds);
+    const logits = Array.from(results.logits.data);
+    const probs = softmax(logits);
+
+    const predIdx = probs.indexOf(Math.max(...probs));
+    showResult({
+      predicted_class: CLASS_NAMES[predIdx],
+      confidence: probs[predIdx],
+      probabilities: Object.fromEntries(CLASS_NAMES.map((c, i) => [c, probs[i]])),
+    });
+  } catch (err) {
+    showError('Ошибка классификации: ' + err.message);
+  } finally {
+    loading.style.display = 'none';
+    analyseBtn.disabled = false;
+  }
+}
+
+// ── File handling ─────────────────────────────────────────────────────────────
+dropZone.addEventListener('click', () => { if (!dropZone.classList.contains('disabled')) fileInput.click(); });
+dropZone.addEventListener('dragover', e => { e.preventDefault(); if (!dropZone.classList.contains('disabled')) dropZone.classList.add('drag'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault(); dropZone.classList.remove('drag');
+  if (!dropZone.classList.contains('disabled') && e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', () => { if (fileInput.files[0]) handleFile(fileInput.files[0]); });
+changeBtn.addEventListener('click', () => fileInput.click());
+
+function handleFile(file) {
+  if (file.size > 10 * 1024 * 1024) { showError('Файл слишком большой. Максимум 10 МБ.'); return; }
+  currentFile = file;
+  const url = URL.createObjectURL(file);
+  previewImg.onload = () => {};
+  previewImg.src = url;
+  previewWrap.style.display = 'block';
+  analyseBtn.style.display = 'block';
+  hideResult(); hideError();
+}
+
+analyseBtn.addEventListener('click', runInference);
+
+// ── Result rendering ──────────────────────────────────────────────────────────
+function showResult(data) {
+  const cls = data.predicted_class;
+  document.getElementById('resClass').textContent = cls.charAt(0).toUpperCase() + cls.slice(1);
+  document.getElementById('resClassRu').textContent = CLASS_LABELS[cls] || cls;
+  document.getElementById('resConf').innerHTML = Math.round(data.confidence * 100) + '<span>%</span>';
+
+  const container = document.getElementById('barsContainer');
+  container.innerHTML = '';
+  const sorted = Object.entries(data.probabilities).sort((a, b) => b[1] - a[1]);
+  sorted.forEach(([c, prob]) => {
+    const isTop = c === cls;
+    const pct = (prob * 100).toFixed(1);
+    const row = document.createElement('div');
+    row.className = 'bar-row';
+    row.innerHTML = `
+      <div class="bar-label">${CLASS_LABELS[c] || c}</div>
+      <div class="bar-track"><div class="bar-fill ${isTop ? 'top' : ''}" style="width:0%" data-w="${pct}%"></div></div>
+      <div class="bar-pct ${isTop ? 'top' : ''}">${pct}%</div>`;
+    container.appendChild(row);
+  });
+
+  resultCard.style.display = 'block';
+  resetBtn.style.display = 'block';
+  requestAnimationFrame(() => {
+    container.querySelectorAll('.bar-fill').forEach(el => { el.style.width = el.dataset.w; });
+  });
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function showError(msg) { errorText.innerHTML = msg; errorBox.style.display = 'flex'; }
+function hideError() { errorBox.style.display = 'none'; }
+function hideResult() { resultCard.style.display = 'none'; resetBtn.style.display = 'none'; }
+
+resetBtn.addEventListener('click', () => {
+  currentFile = null; fileInput.value = '';
+  previewImg.src = ''; previewWrap.style.display = 'none';
+  analyseBtn.style.display = 'none';
+  hideResult(); hideError();
+});
+
+// ── Modal ─────────────────────────────────────────────────────────────────────
+helpBtn.addEventListener('click', () => modalBackdrop.classList.add('open'));
+modalClose.addEventListener('click', () => modalBackdrop.classList.remove('open'));
+modalBackdrop.addEventListener('click', e => { if (e.target === modalBackdrop) modalBackdrop.classList.remove('open'); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') modalBackdrop.classList.remove('open'); });
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+loadModel();
+</script>
+</body>
+</html>
