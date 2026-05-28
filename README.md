@@ -63,17 +63,8 @@ python -m http.server 8080
 
 ### Деплой на GitHub Pages
 
-```bash
-# 1. Убедиться что model.onnx и index.html в репозитории
-git add model.onnx index.html
-git commit -m "add web demo"
-git push
-
-# 2. В настройках репозитория: Settings → Pages → Source: main branch / root
-# Сайт будет доступен по адресу: https://<username>.github.io/<repo>/
-```
-
----
+В настройках репозитория: Settings → Pages → Source: main branch / root
+Сайт будет доступен по адресу: ```https://<username>.github.io/<repo>/```
 
 ## Структура проекта
 
