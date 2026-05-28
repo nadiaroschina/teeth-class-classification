@@ -1,0 +1,27 @@
+# Core ML
+torch==2.11.0
+torchvision==0.26.0
+
+# Dataset preparation
+albumentations==2.0.8
+opencv-python-headless==4.13.0.92
+Pillow==12.1.1
+numpy==2.4.4
+scipy==1.17.1
+scikit-learn==1.8.0
+
+# CLIP-based filtering (1_prepare_dataset.ipynb)
+transformers==5.5.4
+huggingface_hub==1.11.0
+
+# ONNX export (export_to_onnx.py)
+onnx==1.21.0
+
+# Visualization & analysis
+matplotlib==3.10.8
+seaborn==0.13.2
+pandas==3.0.1
+
+# Jupyter
+ipykernel==7.2.0
+ipython==9.12.0

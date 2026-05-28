@@ -6,7 +6,7 @@
 <title>Teeth Classifier — Классификация зубов</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.16.3/dist/ort.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/ort.min.js"></script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -23,6 +23,8 @@
     --muted: rgba(240,242,245,0.45);
     --danger: #ff5c5c;
     --danger-bg: rgba(255,92,92,0.1);
+    --warning: #f0b429;
+    --warning-bg: rgba(240,180,41,0.1);
     --mono: 'IBM Plex Mono', monospace;
     --head: 'Syne', sans-serif;
     --body: 'Inter', sans-serif;
@@ -92,7 +94,6 @@
     line-height: 1.5;
   }
 
-  /* ── Help button ── */
   .help-btn {
     flex-shrink: 0;
     margin-top: 4px;
@@ -107,10 +108,11 @@
     cursor: pointer;
     display: flex; align-items: center; justify-content: center;
     transition: border-color 0.2s, color 0.2s, background 0.2s;
+    position: relative;
+    z-index: 10;
   }
   .help-btn:hover { border-color: var(--teal); color: var(--teal); background: var(--teal-dim); }
 
-  /* ── Model loading status ── */
   .model-status {
     display: flex;
     align-items: center;
@@ -135,7 +137,6 @@
   .status-dot.ready   { background: var(--teal); animation: none; }
   .status-dot.error   { background: var(--danger); animation: none; }
 
-  /* ── Upload zone ── */
   .upload-zone {
     border: 1.5px dashed var(--border2);
     border-radius: var(--radius);
@@ -172,35 +173,48 @@
   .upload-hint { font-size: 13px; color: var(--muted); }
   .upload-hint em { font-style: normal; font-family: var(--mono); color: rgba(0,229,195,0.6); }
 
-  /* ── Preview ── */
   .preview-wrap {
     display: none;
     margin-top: 20px;
-    border-radius: var(--radius);
+    gap: 12px;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  }
+  .preview-wrap.active { display: grid; }
+  .preview-item {
+    position: relative;
+    border-radius: var(--radius-sm);
     overflow: hidden;
     border: 1px solid var(--border);
-    position: relative;
-  }
-  .preview-wrap img {
-    width: 100%; max-height: 320px;
-    object-fit: contain;
     background: var(--surface2);
+    aspect-ratio: 1;
+  }
+  .preview-item img {
+    width: 100%; height: 100%;
+    object-fit: cover;
     display: block;
   }
-  .preview-change {
-    position: absolute; top: 10px; right: 10px;
-    font-family: var(--mono); font-size: 11px;
-    padding: 5px 12px;
-    border-radius: 6px;
-    background: rgba(7,8,13,0.75);
+  .preview-remove {
+    position: absolute; top: 6px; right: 6px;
+    width: 24px; height: 24px;
+    border-radius: 50%;
+    background: rgba(7,8,13,0.85);
     border: 1px solid var(--border2);
     color: var(--muted);
+    font-size: 14px;
     cursor: pointer;
-    transition: color 0.2s;
+    display: flex; align-items: center; justify-content: center;
+    transition: color 0.2s, border-color 0.2s;
   }
-  .preview-change:hover { color: var(--text); }
+  .preview-remove:hover { color: var(--danger); border-color: var(--danger); }
 
-  /* ── Submit ── */
+  .preview-count {
+    margin-top: 12px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--muted);
+    text-align: center;
+  }
+
   .btn-wrap { margin-top: 20px; }
   .btn-analyse {
     width: 100%;
@@ -221,7 +235,6 @@
   .btn-analyse:active:not(:disabled) { transform: scale(0.99); }
   .btn-analyse:disabled { opacity: 0.4; cursor: not-allowed; }
 
-  /* ── Loading ── */
   .loading {
     display: none;
     flex-direction: column;
@@ -242,7 +255,6 @@
   }
   .loading p { font-family: var(--mono); font-size: 13px; color: var(--muted); }
 
-  /* ── Error ── */
   .error-box {
     margin-top: 20px;
     padding: 16px 18px;
@@ -258,7 +270,6 @@
   }
   .error-box svg { flex-shrink: 0; margin-top: 1px; }
 
-  /* ── Result ── */
   .result-card {
     display: none;
     margin-top: 28px;
@@ -278,11 +289,27 @@
   }
   .result-label { font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; color: var(--muted); text-transform: uppercase; margin-bottom: 6px; }
   .result-class-name { font-family: var(--head); font-size: 32px; font-weight: 800; letter-spacing: -0.02em; color: var(--teal); }
+  .result-class-name.low-confidence { color: var(--warning); }
   .result-class-ru { font-family: var(--head); font-size: 14px; font-weight: 600; color: var(--muted); margin-top: 2px; }
   .confidence-block { text-align: right; }
   .conf-label { font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; color: var(--muted); text-transform: uppercase; margin-bottom: 4px; }
   .conf-value { font-family: var(--mono); font-size: 30px; font-weight: 500; color: var(--text); }
+  .conf-value.low-confidence { color: var(--warning); }
   .conf-value span { font-size: 18px; color: var(--muted); }
+
+  .warning-box {
+    margin: 16px 24px 0;
+    padding: 14px 16px;
+    border-radius: var(--radius-sm);
+    background: var(--warning-bg);
+    border: 1px solid rgba(240,180,41,0.25);
+    color: var(--warning);
+    font-size: 13px;
+    line-height: 1.5;
+    display: none;
+  }
+  .warning-box.show { display: block; }
+  .warning-title { font-weight: 600; margin-bottom: 4px; }
 
   .bars-section { padding: 20px 24px 24px; }
   .bars-title { font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; color: var(--muted); text-transform: uppercase; margin-bottom: 16px; }
@@ -293,6 +320,17 @@
   .bar-fill.top { background: var(--teal); }
   .bar-pct { font-family: var(--mono); font-size: 12px; color: var(--muted); text-align: right; }
   .bar-pct.top { color: var(--teal); }
+
+  .aggregation-info {
+    margin: 16px 24px 0;
+    padding: 12px 14px;
+    background: var(--teal-glow);
+    border-left: 2px solid var(--teal);
+    border-radius: 0 6px 6px 0;
+    font-size: 12px;
+    color: var(--muted);
+    font-family: var(--mono);
+  }
 
   .btn-reset {
     margin-top: 28px;
@@ -323,7 +361,6 @@
   .foot-model { font-family: var(--mono); font-size: 12px; color: var(--muted); }
   .foot-acc { font-family: var(--mono); font-size: 12px; color: var(--teal); background: var(--teal-dim); border-radius: 4px; padding: 3px 10px; }
 
-  /* ── Help modal ── */
   .modal-backdrop {
     display: none;
     position: fixed; inset: 0;
@@ -383,7 +420,6 @@
     color: var(--muted);
   }
 
-  /* ── Canvas (hidden, used for preprocessing) ── */
   #offscreen { display: none; }
 
   @keyframes spin { to { transform: rotate(360deg); } }
@@ -402,20 +438,18 @@
     <div>
       <div class="logo-badge">Dental AI · EfficientNet-B0 · ONNX</div>
       <h1>Teeth<br><span>Classifier</span></h1>
-      <p class="subtitle">Загрузите фотографию зуба — модель работает<br>прямо в браузере, без сервера.</p>
+      <p class="subtitle">Загрузите одно или несколько фото зубов — модель работает<br>прямо в браузере, без сервера.</p>
     </div>
     <button class="help-btn" id="helpBtn" aria-label="Инструкция">?</button>
   </header>
 
-  <!-- Model status -->
   <div class="model-status" id="modelStatus">
     <div class="status-dot loading" id="statusDot"></div>
     <span id="statusText">Загрузка модели…</span>
   </div>
 
-  <!-- Upload zone -->
   <div class="upload-zone disabled" id="dropZone">
-    <input type="file" id="fileInput" accept="image/jpeg,image/png,image/webp,image/bmp">
+    <input type="file" id="fileInput" accept="image/jpeg,image/png,image/webp,image/bmp" multiple>
     <div class="upload-icon">
       <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
         <path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>
@@ -423,22 +457,20 @@
         <line x1="12" y1="8" x2="12" y2="20"/>
       </svg>
     </div>
-    <div class="upload-title">Перетащите изображение сюда</div>
-    <div class="upload-hint">или нажмите для выбора файла<br><em>JPG / PNG / WebP · до 10 МБ</em></div>
+    <div class="upload-title">Перетащите изображения сюда</div>
+    <div class="upload-hint">или нажмите для выбора файлов<br><em>JPG / PNG / WebP · до 10 МБ · можно несколько</em></div>
   </div>
 
-  <div class="preview-wrap" id="previewWrap">
-    <img id="previewImg" src="" alt="Preview">
-    <button class="preview-change" id="changeBtn">Изменить</button>
-  </div>
+  <div class="preview-wrap" id="previewWrap"></div>
+  <div class="preview-count" id="previewCount" style="display:none;"></div>
 
   <div class="btn-wrap">
-    <button class="btn-analyse" id="analyseBtn">Классифицировать зуб →</button>
+    <button class="btn-analyse" id="analyseBtn">Классифицировать →</button>
   </div>
 
   <div class="loading" id="loading">
     <div class="loader-ring"></div>
-    <p>Анализ изображения…</p>
+    <p id="loadingText">Анализ изображений…</p>
   </div>
 
   <div class="error-box" id="errorBox">
@@ -458,13 +490,18 @@
         <div class="conf-value" id="resConf">—<span>%</span></div>
       </div>
     </div>
+    <div class="warning-box" id="warningBox">
+      <div class="warning-title">⚠️ Модель не уверена в результате</div>
+      <div id="warningText">Попробуйте сфотографировать зуб с другого ракурса или загрузить несколько фото для более точного результата.</div>
+    </div>
     <div class="bars-section">
       <div class="bars-title">Вероятности по классам</div>
       <div id="barsContainer"></div>
     </div>
+    <div class="aggregation-info" id="aggregationInfo" style="display:none;"></div>
   </div>
 
-  <button class="btn-reset" id="resetBtn">← Загрузить другое изображение</button>
+  <button class="btn-reset" id="resetBtn">← Загрузить другие изображения</button>
 
   <footer>
     <span class="foot-model">EfficientNet-B0 · v1c · ONNX Runtime Web</span>
@@ -472,19 +509,18 @@
   </footer>
 </div>
 
-<!-- Help modal -->
 <div class="modal-backdrop" id="modalBackdrop">
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
     <button class="modal-close" id="modalClose" aria-label="Закрыть">✕</button>
     <h2 id="modalTitle">Как пользоваться</h2>
     <ol>
       <li><span class="step-num">1</span><span>Дождитесь загрузки модели — индикатор вверху станет зелёным.</span></li>
-      <li><span class="step-num">2</span><span>Загрузите фотографию или рентгеновский снимок зуба — перетащите в зону загрузки или нажмите на неё.</span></li>
-      <li><span class="step-num">3</span><span>Нажмите <strong>«Классифицировать зуб»</strong>. Модель работает прямо в браузере — интернет больше не нужен.</span></li>
+      <li><span class="step-num">2</span><span>Загрузите одно или несколько фото зубов — перетащите в зону загрузки или нажмите на неё.</span></li>
+      <li><span class="step-num">3</span><span>Нажмите <strong>«Классифицировать»</strong>. При загрузке нескольких фото результаты усредняются для повышения точности.</span></li>
       <li><span class="step-num">4</span><span>Вы получите класс зуба (резец, клык, премоляр, моляр) и вероятности по всем классам.</span></li>
     </ol>
     <div class="note">
-      Поддерживаемые форматы: JPG, PNG, WebP, BMP. Максимальный размер — 10 МБ. Модель загружается один раз (~20 МБ) и кэшируется браузером.
+      <strong>Совет:</strong> Если уверенность модели низкая (<80%), попробуйте загрузить несколько фото одного зуба с разных ракурсов — это повысит точность предсказания.
     </div>
   </div>
 </div>
@@ -496,19 +532,23 @@ const CLASS_LABELS = { incisor: 'Резец', canine: 'Клык', premolar: 'П�
 const IMG_SIZE = 224;
 const MEAN = [0.485, 0.456, 0.406];
 const STD  = [0.229, 0.224, 0.225];
-const MODEL_URL = 'model.onnx';   // relative path — лежит рядом с index.html
+const MODEL_URL = 'model.onnx';
+const CONFIDENCE_THRESHOLD = 0.80;
 
 // ── DOM refs ─────────────────────────────────────────────────────────────────
 const dropZone     = document.getElementById('dropZone');
 const fileInput    = document.getElementById('fileInput');
 const previewWrap  = document.getElementById('previewWrap');
-const previewImg   = document.getElementById('previewImg');
-const changeBtn    = document.getElementById('changeBtn');
+const previewCount = document.getElementById('previewCount');
 const analyseBtn   = document.getElementById('analyseBtn');
 const loading      = document.getElementById('loading');
+const loadingText  = document.getElementById('loadingText');
 const errorBox     = document.getElementById('errorBox');
 const errorText    = document.getElementById('errorText');
 const resultCard   = document.getElementById('resultCard');
+const warningBox   = document.getElementById('warningBox');
+const warningText  = document.getElementById('warningText');
+const aggregationInfo = document.getElementById('aggregationInfo');
 const resetBtn     = document.getElementById('resetBtn');
 const helpBtn      = document.getElementById('helpBtn');
 const modalBackdrop= document.getElementById('modalBackdrop');
@@ -518,7 +558,7 @@ const statusText   = document.getElementById('statusText');
 const offscreen    = document.getElementById('offscreen');
 
 let session = null;
-let currentFile = null;
+let currentFiles = [];
 
 // ── Model loading ─────────────────────────────────────────────────────────────
 async function loadModel() {
@@ -540,14 +580,13 @@ async function loadModel() {
 function imageToTensor(imgElement) {
   const ctx = offscreen.getContext('2d');
   ctx.drawImage(imgElement, 0, 0, IMG_SIZE, IMG_SIZE);
-  const { data } = ctx.getImageData(0, 0, IMG_SIZE, IMG_SIZE); // RGBA uint8
+  const { data } = ctx.getImageData(0, 0, IMG_SIZE, IMG_SIZE);
 
   const floatData = new Float32Array(3 * IMG_SIZE * IMG_SIZE);
   for (let i = 0; i < IMG_SIZE * IMG_SIZE; i++) {
     const r = data[i * 4]     / 255;
     const g = data[i * 4 + 1] / 255;
     const b = data[i * 4 + 2] / 255;
-    // CHW layout, normalize ImageNet
     floatData[0 * IMG_SIZE * IMG_SIZE + i] = (r - MEAN[0]) / STD[0];
     floatData[1 * IMG_SIZE * IMG_SIZE + i] = (g - MEAN[1]) / STD[1];
     floatData[2 * IMG_SIZE * IMG_SIZE + i] = (b - MEAN[2]) / STD[2];
@@ -562,26 +601,49 @@ function softmax(arr) {
   return exps.map(x => x / sum);
 }
 
-// ── Inference ────────────────────────────────────────────────────────────────
+// ── Inference (multi-image aggregation) ──────────────────────────────────────
 async function runInference() {
-  if (!session || !currentFile) return;
+  if (!session || currentFiles.length === 0) return;
 
   hideResult(); hideError();
   loading.style.display = 'flex';
+  loadingText.textContent = currentFiles.length === 1 
+    ? 'Анализ изображения…' 
+    : `Анализ ${currentFiles.length} изображений…`;
   analyseBtn.disabled = true;
 
   try {
-    const tensor = imageToTensor(previewImg);
-    const feeds = { input: tensor };
-    const results = await session.run(feeds);
-    const logits = Array.from(results.logits.data);
-    const probs = softmax(logits);
+    const allProbs = [];
+    
+    // Run inference on each image
+    for (let i = 0; i < currentFiles.length; i++) {
+      const img = new Image();
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = reject;
+        img.src = currentFiles[i].url;
+      });
 
-    const predIdx = probs.indexOf(Math.max(...probs));
+      const tensor = imageToTensor(img);
+      const feeds = { input: tensor };
+      const results = await session.run(feeds);
+      const logits = Array.from(results.logits.data);
+      const probs = softmax(logits);
+      allProbs.push(probs);
+    }
+
+    // Aggregate probabilities (average)
+    const avgProbs = CLASS_NAMES.map((_, classIdx) => {
+      const sum = allProbs.reduce((acc, probs) => acc + probs[classIdx], 0);
+      return sum / allProbs.length;
+    });
+
+    const predIdx = avgProbs.indexOf(Math.max(...avgProbs));
     showResult({
       predicted_class: CLASS_NAMES[predIdx],
-      confidence: probs[predIdx],
-      probabilities: Object.fromEntries(CLASS_NAMES.map((c, i) => [c, probs[i]])),
+      confidence: avgProbs[predIdx],
+      probabilities: Object.fromEntries(CLASS_NAMES.map((c, i) => [c, avgProbs[i]])),
+      num_images: currentFiles.length,
     });
   } catch (err) {
     showError('Ошибка классификации: ' + err.message);
@@ -592,25 +654,84 @@ async function runInference() {
 }
 
 // ── File handling ─────────────────────────────────────────────────────────────
-dropZone.addEventListener('click', () => { if (!dropZone.classList.contains('disabled')) fileInput.click(); });
-dropZone.addEventListener('dragover', e => { e.preventDefault(); if (!dropZone.classList.contains('disabled')) dropZone.classList.add('drag'); });
-dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag'));
-dropZone.addEventListener('drop', e => {
-  e.preventDefault(); dropZone.classList.remove('drag');
-  if (!dropZone.classList.contains('disabled') && e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+dropZone.addEventListener('click', () => { 
+  if (!dropZone.classList.contains('disabled')) fileInput.click(); 
 });
-fileInput.addEventListener('change', () => { if (fileInput.files[0]) handleFile(fileInput.files[0]); });
-changeBtn.addEventListener('click', () => fileInput.click());
 
-function handleFile(file) {
-  if (file.size > 10 * 1024 * 1024) { showError('Файл слишком большой. Максимум 10 МБ.'); return; }
-  currentFile = file;
-  const url = URL.createObjectURL(file);
-  previewImg.onload = () => {};
-  previewImg.src = url;
-  previewWrap.style.display = 'block';
+dropZone.addEventListener('dragover', e => { 
+  e.preventDefault(); 
+  if (!dropZone.classList.contains('disabled')) dropZone.classList.add('drag'); 
+});
+
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag'));
+
+dropZone.addEventListener('drop', e => {
+  e.preventDefault(); 
+  dropZone.classList.remove('drag');
+  if (!dropZone.classList.contains('disabled') && e.dataTransfer.files.length > 0) {
+    handleFiles(Array.from(e.dataTransfer.files));
+  }
+});
+
+fileInput.addEventListener('change', () => { 
+  if (fileInput.files.length > 0) handleFiles(Array.from(fileInput.files)); 
+});
+
+function handleFiles(files) {
+  const validFiles = files.filter(f => {
+    if (f.size > 10 * 1024 * 1024) {
+      showError(`Файл ${f.name} слишком большой (макс. 10 МБ)`);
+      return false;
+    }
+    return true;
+  });
+
+  if (validFiles.length === 0) return;
+
+  currentFiles = validFiles.map(f => ({
+    file: f,
+    url: URL.createObjectURL(f),
+  }));
+
+  renderPreviews();
   analyseBtn.style.display = 'block';
   hideResult(); hideError();
+}
+
+function renderPreviews() {
+  previewWrap.innerHTML = '';
+  currentFiles.forEach((fileObj, idx) => {
+    const item = document.createElement('div');
+    item.className = 'preview-item';
+    item.innerHTML = `
+      <img src="${fileObj.url}" alt="Preview ${idx + 1}">
+      <button class="preview-remove" data-idx="${idx}">✕</button>
+    `;
+    previewWrap.appendChild(item);
+  });
+
+  previewWrap.classList.add('active');
+  previewCount.style.display = 'block';
+  previewCount.textContent = `Загружено: ${currentFiles.length} ${currentFiles.length === 1 ? 'изображение' : 'изображений'}`;
+
+  // Remove button handlers
+  document.querySelectorAll('.preview-remove').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const idx = parseInt(btn.dataset.idx);
+      URL.revokeObjectURL(currentFiles[idx].url);
+      currentFiles.splice(idx, 1);
+      
+      if (currentFiles.length === 0) {
+        previewWrap.classList.remove('active');
+        previewCount.style.display = 'none';
+        analyseBtn.style.display = 'none';
+        fileInput.value = '';
+      } else {
+        renderPreviews();
+      }
+    });
+  });
 }
 
 analyseBtn.addEventListener('click', runInference);
@@ -618,10 +739,29 @@ analyseBtn.addEventListener('click', runInference);
 // ── Result rendering ──────────────────────────────────────────────────────────
 function showResult(data) {
   const cls = data.predicted_class;
-  document.getElementById('resClass').textContent = cls.charAt(0).toUpperCase() + cls.slice(1);
-  document.getElementById('resClassRu').textContent = CLASS_LABELS[cls] || cls;
-  document.getElementById('resConf').innerHTML = Math.round(data.confidence * 100) + '<span>%</span>';
+  const confidence = data.confidence;
+  const isLowConfidence = confidence < CONFIDENCE_THRESHOLD;
 
+  document.getElementById('resClass').textContent = cls.charAt(0).toUpperCase() + cls.slice(1);
+  document.getElementById('resClass').className = 'result-class-name' + (isLowConfidence ? ' low-confidence' : '');
+  document.getElementById('resClassRu').textContent = CLASS_LABELS[cls] || cls;
+  
+  const confEl = document.getElementById('resConf');
+  confEl.innerHTML = Math.round(confidence * 100) + '<span>%</span>';
+  confEl.className = 'conf-value' + (isLowConfidence ? ' low-confidence' : '');
+
+  // Show/hide warning
+  if (isLowConfidence) {
+    const sorted = Object.entries(data.probabilities).sort((a, b) => b[1] - a[1]);
+    const top2 = sorted.slice(0, 2);
+    const alternatives = top2.map(([c, p]) => CLASS_LABELS[c]).join(' или ');
+    warningText.textContent = `Модель не уверена — возможно, это ${alternatives}. Попробуйте сфотографировать зуб с другого ракурса или загрузить несколько фото для более точного результата.`;
+    warningBox.classList.add('show');
+  } else {
+    warningBox.classList.remove('show');
+  }
+
+  // Render probability bars
   const container = document.getElementById('barsContainer');
   container.innerHTML = '';
   const sorted = Object.entries(data.probabilities).sort((a, b) => b[1] - a[1]);
@@ -637,21 +777,47 @@ function showResult(data) {
     container.appendChild(row);
   });
 
+  // Show aggregation info if multiple images
+  if (data.num_images > 1) {
+    aggregationInfo.textContent = `Результат усреднён по ${data.num_images} изображениям`;
+    aggregationInfo.style.display = 'block';
+  } else {
+    aggregationInfo.style.display = 'none';
+  }
+
   resultCard.style.display = 'block';
   resetBtn.style.display = 'block';
+  
+  // Animate bars
   requestAnimationFrame(() => {
-    container.querySelectorAll('.bar-fill').forEach(el => { el.style.width = el.dataset.w; });
+    container.querySelectorAll('.bar-fill').forEach(el => { 
+      el.style.width = el.dataset.w; 
+    });
   });
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-function showError(msg) { errorText.innerHTML = msg; errorBox.style.display = 'flex'; }
-function hideError() { errorBox.style.display = 'none'; }
-function hideResult() { resultCard.style.display = 'none'; resetBtn.style.display = 'none'; }
+function showError(msg) { 
+  errorText.innerHTML = msg; 
+  errorBox.style.display = 'flex'; 
+}
+
+function hideError() { 
+  errorBox.style.display = 'none'; 
+}
+
+function hideResult() { 
+  resultCard.style.display = 'none'; 
+  resetBtn.style.display = 'none'; 
+}
 
 resetBtn.addEventListener('click', () => {
-  currentFile = null; fileInput.value = '';
-  previewImg.src = ''; previewWrap.style.display = 'none';
+  currentFiles.forEach(f => URL.revokeObjectURL(f.url));
+  currentFiles = [];
+  fileInput.value = '';
+  previewWrap.innerHTML = '';
+  previewWrap.classList.remove('active');
+  previewCount.style.display = 'none';
   analyseBtn.style.display = 'none';
   hideResult(); hideError();
 });
@@ -659,8 +825,12 @@ resetBtn.addEventListener('click', () => {
 // ── Modal ─────────────────────────────────────────────────────────────────────
 helpBtn.addEventListener('click', () => modalBackdrop.classList.add('open'));
 modalClose.addEventListener('click', () => modalBackdrop.classList.remove('open'));
-modalBackdrop.addEventListener('click', e => { if (e.target === modalBackdrop) modalBackdrop.classList.remove('open'); });
-document.addEventListener('keydown', e => { if (e.key === 'Escape') modalBackdrop.classList.remove('open'); });
+modalBackdrop.addEventListener('click', e => { 
+  if (e.target === modalBackdrop) modalBackdrop.classList.remove('open'); 
+});
+document.addEventListener('keydown', e => { 
+  if (e.key === 'Escape') modalBackdrop.classList.remove('open'); 
+});
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 loadModel();
